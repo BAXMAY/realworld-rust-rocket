@@ -1,12 +1,12 @@
 use crate::models::user::User;
 use crate::schema::users;
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use diesel::result::{DatabaseErrorKind, Error};
-use scrypt::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
-    Scrypt,
-};
 use serde::Deserialize;
 
 #[derive(Insertable)]
@@ -42,7 +42,8 @@ pub fn create(
     password: &str,
 ) -> Result<User, UserCreationError> {
     let salt = SaltString::generate(&mut OsRng);
-    let hash = Scrypt
+    let argon2 = Argon2::default();
+    let hash = argon2
         .hash_password(password.as_bytes(), &salt)
         .expect("hash error")
         .to_string()
@@ -68,7 +69,7 @@ pub fn login(conn: &PgConnection, email: &str, password: &str) -> Option<User> {
         .ok()?;
 
     let parsed_hash = PasswordHash::new(&user.hash).unwrap();
-    let password_matches = Scrypt
+    let password_matches = Argon2::default()
         .verify_password(password.as_bytes(), &parsed_hash)
         .map_err(|err| eprintln!("login_user: scrypt_check: {}", err))
         .is_ok();

@@ -12,6 +12,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "argon2"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1574351abf0e4ef0de867b083a9f8e2f13618efcad6d3253c53554e4a887ed5"
+dependencies = [
+ "base64ct",
+ "blake2",
+ "password-hash",
+]
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -61,6 +72,15 @@ name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
+
+[[package]]
+name = "blake2"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b94ba84325db59637ffc528bbe8c7f86c02c57cff5c0e2b9b00f9a851f42f309"
+dependencies = [
+ "digest",
+]
 
 [[package]]
 name = "block-buffer"
@@ -891,12 +911,14 @@ dependencies = [
 name = "realworld"
 version = "0.5.3"
 dependencies = [
+ "argon2",
  "chrono",
  "diesel",
  "dotenv",
  "jsonwebtoken",
  "once_cell",
  "rand",
+ "rand_core",
  "rocket",
  "rocket_contrib",
  "rocket_cors",
