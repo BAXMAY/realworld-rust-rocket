@@ -3,8 +3,8 @@ use crate::config::AppState;
 use crate::db::{self, users::UserCreationError};
 use crate::errors::{Errors, FieldValidator};
 
+use rocket::serde::json::{serde_json::json, Json, Value};
 use rocket::State;
-use rocket_contrib::json::{Json, JsonValue};
 use serde::Deserialize;
 use validator::Validate;
 
@@ -24,11 +24,11 @@ struct NewUserData {
 }
 
 #[post("/users", format = "json", data = "<new_user>")]
-pub fn post_users(
+pub async fn post_users(
     new_user: Json<NewUser>,
     conn: db::Conn,
-    state: State<AppState>,
-) -> Result<JsonValue, Errors> {
+    state: &State<AppState>,
+) -> Result<Value, Errors> {
     let new_user = new_user.into_inner().user;
 
     let mut extractor = FieldValidator::validate(&new_user);
@@ -38,15 +38,20 @@ pub fn post_users(
 
     extractor.check()?;
 
-    db::users::create(&conn, &username, &email, &password)
-        .map(|user| json!({ "user": user.to_user_auth(&state.secret) }))
-        .map_err(|error| {
-            let field = match error {
-                UserCreationError::DuplicatedEmail => "email",
-                UserCreationError::DuplicatedUsername => "username",
-            };
-            Errors::new(&[(field, "has already been taken")])
-        })
+    let secret = state.secret.to_owned();
+
+    conn.run(move |c| {
+        db::users::create(c, &username, &email, &password)
+            .map(|user| json!({ "user": user.to_user_auth(&secret) }))
+            .map_err(|error| {
+                let field = match error {
+                    UserCreationError::DuplicatedEmail => "email",
+                    UserCreationError::DuplicatedUsername => "username",
+                };
+                Errors::new(&[(field, "has already been taken")])
+            })
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -61,11 +66,11 @@ struct LoginUserData {
 }
 
 #[post("/users/login", format = "json", data = "<user>")]
-pub fn post_users_login(
+pub async fn post_users_login(
     user: Json<LoginUser>,
     conn: db::Conn,
-    state: State<AppState>,
-) -> Result<JsonValue, Errors> {
+    state: &State<AppState>,
+) -> Result<Value, Errors> {
     let user = user.into_inner().user;
 
     let mut extractor = FieldValidator::default();
@@ -73,14 +78,24 @@ pub fn post_users_login(
     let password = extractor.extract("password", user.password);
     extractor.check()?;
 
-    db::users::login(&conn, &email, &password)
-        .map(|user| json!({ "user": user.to_user_auth(&state.secret) }))
-        .ok_or_else(|| Errors::new(&[("email or password", "is invalid")]))
+    let secret = state.secret.to_owned();
+
+    conn.run(move |c| {
+        db::users::login(c, &email, &password)
+            .map(|user| json!({ "user": user.to_user_auth(&secret) }))
+            .ok_or_else(|| Errors::new(&[("email or password", "is invalid")]))
+    })
+    .await
 }
 
 #[get("/user")]
-pub fn get_user(auth: Auth, conn: db::Conn, state: State<AppState>) -> Option<JsonValue> {
-    db::users::find(&conn, auth.id).map(|user| json!({ "user": user.to_user_auth(&state.secret) }))
+pub async fn get_user(auth: Auth, conn: db::Conn, state: &State<AppState>) -> Option<Value> {
+    let secret = state.secret.to_owned();
+
+    conn.run(move |c| {
+        db::users::find(c, auth.id).map(|user| json!({ "user": user.to_user_auth(&secret) }))
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -89,12 +104,17 @@ pub struct UpdateUser {
 }
 
 #[put("/user", format = "json", data = "<user>")]
-pub fn put_user(
+pub async fn put_user(
     user: Json<UpdateUser>,
     auth: Auth,
     conn: db::Conn,
-    state: State<AppState>,
-) -> Option<JsonValue> {
-    db::users::update(&conn, auth.id, &user.user)
-        .map(|user| json!({ "user": user.to_user_auth(&state.secret) }))
+    state: &State<AppState>,
+) -> Option<Value> {
+    let secret = state.secret.to_owned();
+
+    conn.run(move |c| {
+        db::users::update(c, auth.id, &user.user)
+            .map(|user| json!({ "user": user.to_user_auth(&secret) }))
+    })
+    .await
 }

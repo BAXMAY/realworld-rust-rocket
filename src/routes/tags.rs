@@ -1,7 +1,7 @@
 use crate::db;
-use rocket_contrib::json::JsonValue;
+use rocket::serde::json::{serde_json::json, Value};
 
 #[get("/tags")]
-pub fn get_tags(conn: db::Conn) -> JsonValue {
-    json!({ "tags": db::articles::tags(&conn) })
+pub async fn get_tags(conn: db::Conn) -> Value {
+    conn.run(|c| json!({ "tags": db::articles::tags(c) })).await
 }

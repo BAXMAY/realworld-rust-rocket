@@ -9,6 +9,7 @@ use diesel;
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use rocket::FromForm;
 use serde::Deserialize;
 use slug;
 
@@ -71,14 +72,19 @@ fn generate_suffix(len: usize) -> String {
         .collect()
 }
 
-#[derive(FromForm, Default)]
+#[derive(FromForm, Clone)]
 pub struct FindArticles {
-    tag: Option<String>,
-    author: Option<String>,
+    #[field(default = "")]
+    tag: String,
+    #[field(default = "")]
+    author: String,
     /// favorited by user
-    favorited: Option<String>,
-    limit: Option<i64>,
-    offset: Option<i64>,
+    #[field(default = "")]
+    favorited: String,
+    #[field(default = DEFAULT_LIMIT)]
+    limit: i64,
+    #[field(default = 0)]
+    offset: i64,
 }
 
 pub fn find(
@@ -99,36 +105,32 @@ pub fn find(
             favorites::user.nullable().is_not_null(),
         ))
         .into_boxed();
-    if let Some(ref author) = params.author {
-        query = query.filter(users::username.eq(author))
-    }
-    if let Some(ref tag) = params.tag {
-        query = query.or_filter(articles::tag_list.contains(vec![tag]))
-    }
-    if let Some(ref favorited) = params.favorited {
-        let result = users::table
-            .select(users::id)
-            .filter(users::username.eq(favorited))
-            .get_result::<i32>(conn);
-        match result {
-            Ok(id) => {
-                query = query.filter(diesel::dsl::sql(&format!(
+    let author = params.author;
+    query = query.filter(users::username.eq(author));
+
+    let tag = params.tag;
+    query = query.or_filter(articles::tag_list.contains(vec![tag]));
+
+    let favorited = params.favorited;
+    let result = users::table
+        .select(users::id)
+        .filter(users::username.eq(favorited))
+        .get_result::<i32>(conn);
+    match result {
+        Ok(id) => {
+            query = query.filter(diesel::dsl::sql(&format!(
                     "articles.id IN (SELECT favorites.article FROM favorites WHERE favorites.user = {})",
                     id
                 )));
-            }
-            Err(err) => match err {
-                diesel::result::Error::NotFound => return (vec![], 0),
-                _ => panic!("Cannot load favorited user: {}", err),
-            },
         }
+        Err(err) => match err {
+            diesel::result::Error::NotFound => return (vec![], 0),
+            _ => panic!("Cannot load favorited user: {}", err),
+        },
     }
 
     query
-        .offset_and_limit(
-            params.offset.unwrap_or(0),
-            params.limit.unwrap_or(DEFAULT_LIMIT),
-        )
+        .offset_and_limit(params.offset, params.limit)
         .load_and_count::<(Article, User, bool)>(conn)
         .map(|(res, count)| {
             (
@@ -155,10 +157,12 @@ pub fn find_one(conn: &PgConnection, slug: &str, user_id: Option<i32>) -> Option
     Some(populate(conn, article, favorited))
 }
 
-#[derive(FromForm, Default)]
+#[derive(FromForm, Clone)]
 pub struct FeedArticles {
-    limit: Option<i64>,
-    offset: Option<i64>,
+    #[field(default = DEFAULT_LIMIT)]
+    limit: i64,
+    #[field(default = 0)]
+    offset: i64,
 }
 
 // select * from articles where author in (select followed from follows where follower = 7);
@@ -182,8 +186,8 @@ pub fn feed(conn: &PgConnection, params: &FeedArticles, user_id: i32) -> Vec<Art
             users::all_columns,
             favorites::user.nullable().is_not_null(),
         ))
-        .limit(params.limit.unwrap_or(DEFAULT_LIMIT))
-        .offset(params.offset.unwrap_or(0))
+        .limit(params.limit)
+        .offset(params.offset)
         .load::<(Article, User, bool)>(conn)
         .expect("Cannot load feed")
         .into_iter()
